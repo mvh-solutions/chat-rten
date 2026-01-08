@@ -14,6 +14,8 @@ rten = { path = "../", version = "0.24.0", features = ["all-ops", "mmap"] }
 rten-generate = { path = "../rten-generate", features=["text-decoder"] }
 
 rten-text = { path = "../rten-text" }
+serde_json.workspace = true
+serde = { version = "1.0.228", features = ["derive"] }
 
 [lints.clippy]
 # Allows use of `..Default::default()` for future compatibility even when not

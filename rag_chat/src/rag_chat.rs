@@ -1,5 +1,6 @@
 mod helpers;
 
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::io;
 use std::io::prelude::*;
@@ -10,8 +11,17 @@ use rten_generate::filter::Chain;
 use rten_generate::sampler::Multinomial;
 use rten_generate::{Generator, GeneratorUtils};
 use rten_text::Tokenizer;
+use serde_json;
 
-use helpers::{MessageChunk, encode_message, Args};
+use helpers::{Args, MessageChunk, encode_message};
+use serde::{Serialize, Deserialize};
+
+#[derive(Serialize, Deserialize)]
+struct VerseContext {
+    translations: BTreeMap<String, String>,
+    notes: BTreeMap<String, Vec<String>>,
+    snippets: BTreeMap<String, Vec<String>>
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args: Args = argh::from_env();
@@ -29,13 +39,51 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Ok(end_of_text_token) = tokenizer.get_token_id("<|endoftext|>") {
         end_of_turn_tokens.push(end_of_text_token);
     }
+    let verse_context_path = std::path::PathBuf::from("./test_data/JHN/ch_3/v16.json");
+    let absolute_verse_context_path = std::path::absolute(&verse_context_path).expect("absolute");
+    let verse_context_string = std::fs::read_to_string(&absolute_verse_context_path).expect("Read verse context");
+    let verse_context_json: VerseContext = serde_json::from_str(&verse_context_string).expect("Parse verse context");
+    let mut translation_contexts: Vec<String> = Vec::new();
+    for (k, v) in verse_context_json.translations {
+        translation_contexts.push(format!("\nHere is {} from the {}: {}\n", "John 3:16", &k, &v ));
+        break;
+    }
+    let translation_context: String = translation_contexts.into_iter().collect();
+
+    let mut note_contexts: Vec<String> = Vec::new();
+    for (k, v) in verse_context_json.notes {
+        let mut numbered_notes: Vec<String> = Vec::new();
+        let mut note_n = 1;
+        for note in v {
+            numbered_notes.push(format!("({}) {} ", note_n, &note));
+            note_n += 1;
+        }
+        let numbered_note_string: String = numbered_notes.into_iter().collect();
+        note_contexts.push(format!("\nHere are notes about {} from the {}: {}\n", "John 3:16", &k, &numbered_note_string));
+    }
+    let note_context: String = note_contexts.into_iter().collect();
+
+    let mut snippet_contexts: Vec<String> = Vec::new();
+    for (snippet_key, snippet_value) in verse_context_json.snippets {
+        let mut snippet_notes: Vec<String> = Vec::new();
+        let mut note_n = 1;
+        for note in snippet_value {
+            snippet_notes.push(format!("({}) {} ", note_n, &note));
+            note_n += 1;
+        }
+        let numbered_note_string: String = snippet_notes.into_iter().collect();
+        snippet_contexts.push(format!("\nHere are notes about the word or words '{}' in {}: {}\n", &snippet_key, "John 3:16", &numbered_note_string));
+    }
+    let snippet_context: String = snippet_contexts.into_iter().collect();
 
     // From `chat_template` in tokenizer_config.json.
     let prompt_tokens = encode_message(
         &tokenizer,
         &[
             MessageChunk::Token(im_start_token),
-            MessageChunk::Text("system\nYou are a helpful assistant."),
+            MessageChunk::Text(
+                "system\nYou are a helpful assistant. The user, Jenny, is translating John 3:16 in the Bible. Jenny is translating from English, which she speaks fluently, but she struggles to read complex English documents. She gets bored when reading long documents.",
+            ),
             MessageChunk::Token(im_end_token),
         ],
     )?;
@@ -65,6 +113,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             &[
                 MessageChunk::Token(im_start_token),
                 MessageChunk::Text("user\n"),
+                MessageChunk::Text("These are context documents that Jenny thinks are important. You should base your answer to her questions on this context.\n\n"),
+                MessageChunk::Text(translation_context.as_str()),
+                MessageChunk::Text(note_context.as_str()),
+                MessageChunk::Text(snippet_context.as_str()),
+                MessageChunk::Text("Answer this question using the context documents above: "),
                 MessageChunk::Text(&user_input),
                 MessageChunk::Token(im_end_token),
                 MessageChunk::Text("\n"),
