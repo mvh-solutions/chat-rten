@@ -392,6 +392,8 @@ dependencies = [
  "rten",
  "rten-generate",
  "rten-text",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
