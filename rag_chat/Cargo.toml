@@ -1,0 +1,32 @@
+[package]
+name = "rag_chat"
+version = "0.0.1"
+edition = "2024"
+authors = ["Robert Knight", "Mark Howe"]
+description = "RAG Chatbot"
+license = "MIT"
+homepage = "https://github.com/mvh-solutions/chat-rten"
+repository = "https://github.com/mvh-solutions/chat-rten"
+
+[dependencies]
+argh = { workspace = true }
+rten = { path = "../", version = "0.24.0", features = ["all-ops", "mmap"] }
+rten-generate = { path = "../rten-generate", features=["text-decoder"] }
+
+rten-text = { path = "../rten-text" }
+
+[lints.clippy]
+# Allows use of `..Default::default()` for future compatibility even when not
+# currently needed.
+needless_update = "allow"
+manual_repeat_n = "allow"  # TODO - Address existing failures
+uninlined_format_args = "allow"
+
+[package.metadata.release]
+release = false
+
+[[bin]]
+name = "rag_chat"
+path = "src/rag_chat.rs"
+test = false
+

@@ -17,7 +17,7 @@ members = [
   "rten-vecmath",
 
   # Example crates. These are not published.
-  "rten-examples",
+  "rag_chat",
 
   # Development crates. These are not published.
   "rten-bench",

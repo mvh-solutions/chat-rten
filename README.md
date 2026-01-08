@@ -8,8 +8,7 @@
 
 ### To run:
 ```
-cd rten-examples
-cargo run --release --bin qwen2_chat ../models/qwen2-0.5b/model.onnx ../models/qwen2-0.5b/tokenizer.json
-```
+cd rag_chat
+cargo run --release --bin rag_chat ../models/qwen2-0.5b/model.onnx ../models/qwen2-0.5b/tokenizer.json```
 
 The upstream README is [here](./README_UPSTREAM.md).

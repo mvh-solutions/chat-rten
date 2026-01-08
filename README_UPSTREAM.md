@@ -63,8 +63,8 @@ the examples locally. Many of the examples use Hugging Face's
 [Optimum](https://github.com/huggingface/optimum) or other Python-based tools to
 export the ONNX model, so you will need a recent Python version installed.
 
-The examples are located in the [rten-examples/](rten-examples/) directory.
-See the [README](rten-examples/) for descriptions of all the examples and steps
+The examples are located in the [rten-examples/](rag_chat/) directory.
+See the [README](rag_chat/) for descriptions of all the examples and steps
 to run them. As a quick-start, here are the steps to run the image
 classification example:
 
