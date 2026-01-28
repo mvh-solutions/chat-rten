@@ -1,5 +1,4 @@
 mod helpers;
-
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::io;
@@ -18,6 +17,7 @@ use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize)]
 struct VerseContext {
+    juxta: String,
     translations: BTreeMap<String, String>,
     notes: BTreeMap<String, Vec<String>>,
     snippets: BTreeMap<String, Vec<String>>
@@ -46,9 +46,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut translation_contexts: Vec<String> = Vec::new();
     for (k, v) in verse_context_json.translations {
         translation_contexts.push(format!("\nHere is {} from the {}: {}\n", "John 3:16", &k, &v ));
-        break;
     }
     let translation_context: String = translation_contexts.into_iter().collect();
+    let juxta_context = verse_context_json.juxta.clone();
 
     let mut note_contexts: Vec<String> = Vec::new();
     for (k, v) in verse_context_json.notes {
@@ -82,14 +82,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         &[
             MessageChunk::Token(im_start_token),
             MessageChunk::Text(
-                "system\nYou are a helpful assistant. The user, Jenny, is translating John 3:16 in the Bible. Jenny is translating from English, which she speaks fluently, but she struggles to read complex English documents. She gets bored when reading long documents.",
+                "system\nYou are a helpful assistant. The user, Jenny, is translating John 3:16 in the Bible. Jenny is translating from English, which she speaks fluently. However, she left school when she was 11 so her written English is limited. She likes to read short, precise answers. She does not want to see the entire verse, only the parts of the verse that are relevant to the question. Your answer should consist of between one and three short paragraphs.",
             ),
             MessageChunk::Token(im_end_token),
         ],
     )?;
 
     // From Qwen2's `generation_config.json`
-    let top_k = 20;
+    let top_k = 5;
 
     let mut generator = Generator::from_model(&model)?
         .with_prompt(&prompt_tokens)
@@ -113,8 +113,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             &[
                 MessageChunk::Token(im_start_token),
                 MessageChunk::Text("user\n"),
-                MessageChunk::Text("These are context documents that Jenny thinks are important. You should base your answer to her questions on this context.\n\n"),
-                MessageChunk::Text("Here are different English Bible translations of the same verse. Pay attention to the names of the translations, and to the differences between the translations for this verse.\n"),
+                MessageChunk::Text("Here are some documents that Jenny thinks are important. You should base your answer to her questions on this context.\n\n"),
+		MessageChunk::Text(&juxta_context),
+                MessageChunk::Text("Here are different English Bible translations of the same verse. These are important. Pay attention to the names of the translations, and to the differences between the translations for this verse.\n"),
                 MessageChunk::Text(translation_context.as_str()),
                 MessageChunk::Text("\nHere are some notes on the whole verse. These are NOT Bible translations. The notes apply to ALL Bible translations. These notes help us to understand the Bible translations.\n"),
                 MessageChunk::Text(note_context.as_str()),
