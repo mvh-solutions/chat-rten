@@ -5,8 +5,8 @@ members = [
   "rten-cli",
   "rten-gemm",
   "rten-generate",
-  "rten-imageio",
-  "rten-imageproc",
+  # "rten-imageio",
+  # "rten-imageproc",
   "rten-model-file",
   "rten-onnx",
   "rten-parallel",
@@ -25,7 +25,7 @@ members = [
 ]
 default-members = [
   ".",
-  "rten-imageproc",
+  # "rten-imageproc",
   "rten-tensor",
   "rten-text"
 ]

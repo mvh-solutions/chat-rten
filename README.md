@@ -3,8 +3,16 @@
 
 ### To set up:
 - find a model (currently testing with qwen2-O.5b and 1.5b)
-- convert it to onnx
+- convert it to onnx, something like
+```
+optimum-cli export onnx --model Qwen/Qwen3-1.7B qwen3-1.7b/
+```
 - put the resulting directory inside `models` (which is .gitignore'd so back it up somewhere else)
+
+To quantize an existing model:
+```
+python3 ort-quantize.py nbits ../models/qwen3-1.7b/model.onnx # tools directory
+```
 
 ### To run:
 ```

@@ -13,7 +13,7 @@ pub(crate) struct Args {
     pub(crate) tokenizer_config: String,
 
     /// generation temperature (must be >= 0, default: 0.7). Smaller values make output less "creative" by concentrating the probability distribution more. A value of 0.0 causes sampling to be greedy.
-    #[argh(option, short = 't', default = "0.7")]
+    #[argh(option, short = 't', default = "0.5")]
     pub(crate) temperature: f32,
 }
 
