@@ -1,4 +1,6 @@
+use std::collections::BTreeMap;
 use argh::FromArgs;
+use serde::{Deserialize, Serialize};
 use rten_text::{Tokenizer, TokenizerError};
 
 /// Helpers for LLM chat.
@@ -13,13 +15,21 @@ pub(crate) struct Args {
     pub(crate) tokenizer_config: String,
 
     /// generation temperature (must be >= 0, default: 0.7). Smaller values make output less "creative" by concentrating the probability distribution more. A value of 0.0 causes sampling to be greedy.
-    #[argh(option, short = 't', default = "0.5")]
+    #[argh(option, short = 't', default = "0.7")]
     pub(crate) temperature: f32,
 }
 
 pub(crate) enum MessageChunk<'a> {
     Text(&'a str),
     Token(u32),
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct VerseContext {
+    pub(crate) juxta: String,
+    pub(crate) translations: BTreeMap<String, String>,
+    pub(crate) notes: BTreeMap<String, Vec<String>>,
+    pub(crate) snippets: BTreeMap<String, Vec<String>>
 }
 
 pub(crate) fn encode_message(
@@ -37,4 +47,56 @@ pub(crate) fn encode_message(
         }
     }
     Ok(token_ids)
+}
+
+pub(crate) fn generate_user_prompt(_bcv: String, _printable_bcv: String, user_input: String) -> String {
+    let verse_context_path = std::path::PathBuf::from("./test_data/JHN/ch_3/v16.json");
+    let absolute_verse_context_path = std::path::absolute(&verse_context_path).expect("absolute");
+    let verse_context_string = std::fs::read_to_string(&absolute_verse_context_path).expect("Read verse context");
+    let verse_context_json: VerseContext = serde_json::from_str(&verse_context_string).expect("Parse verse context");
+    let mut translation_contexts: Vec<String> = Vec::new();
+    for (k, v) in verse_context_json.translations {
+        translation_contexts.push(format!("\n- {} ({}): {}\n", "John 3:16", &k, &v ));
+    }
+    let translation_context: String = translation_contexts.into_iter().collect();
+    let juxta_context = verse_context_json.juxta.clone();
+
+    let mut note_contexts: Vec<String> = Vec::new();
+    for (k, v) in verse_context_json.notes {
+        let mut numbered_notes: Vec<String> = Vec::new();
+        let mut note_n = 1;
+        for note in v {
+            numbered_notes.push(format!("({}) {} ", note_n, &note));
+            note_n += 1;
+        }
+        let numbered_note_string: String = numbered_notes.into_iter().collect();
+        note_contexts.push(format!("\n- {} from the {}: {}\n", "John 3:16", &k, &numbered_note_string));
+    }
+    let note_context: String = note_contexts.into_iter().collect();
+
+    let mut snippet_contexts: Vec<String> = Vec::new();
+    for (snippet_key, snippet_value) in verse_context_json.snippets {
+        let mut snippet_notes: Vec<String> = Vec::new();
+        let mut note_n = 1;
+        for note in snippet_value {
+            snippet_notes.push(format!("({}) {} ", note_n, &note));
+            note_n += 1;
+        }
+        let numbered_note_string: String = snippet_notes.into_iter().collect();
+        snippet_contexts.push(format!("\n- the word or words '{}' in {}: {}\n", &snippet_key, "John 3:16", &numbered_note_string));
+    }
+    let snippet_context: String = snippet_contexts.into_iter().collect();
+    format!(
+        "# Source Documents\n\n{}\n\n# Greek-English Juxtalinear Translation\n\n{}\n\n# English Bible Translations\n\n{}\n{}\n# Verse Notes\n\n{}\n{}\n# Notes on key words in the verse\n\n{}\n{}\n# The user's question\n\n{}\n\n**{}**",
+        "Here are some important documents. You should base your answer to her questions on these documents.",
+        &juxta_context,
+        "Here are different English Bible translations of the same verse. These are important. Pay attention to the names of the translations, and to the differences between the translations for this verse.",
+        translation_context.as_str(),
+        "Here are some notes on the whole verse. These are NOT Bible translations. The notes apply to ALL Bible translations. These notes help us to understand the Bible translations.",
+        note_context.as_str(),
+        "Here are some notes on important words in this verse. These notes are also NOT Bible translations. They refer to the unfoldingWord Literal Translation, but may be applied to other Bible translations.",
+        snippet_context.as_str(),
+        "Now answer the following question using only the documents above.",
+        &user_input.trim()
+    )
 }
