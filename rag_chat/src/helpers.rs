@@ -30,6 +30,18 @@ pub(crate) struct VerseContext {
     pub(crate) snippets: BTreeMap<String, Vec<String>>,
 }
 
+pub(crate) fn get_end_of_turn_tokens(tokenizer: &Tokenizer) -> Vec<TokenId> {
+    let im_end_token = tokenizer.get_token_id("<|im_end|>").expect("get token id for end");
+
+    let mut end_of_turn_tokens = Vec::new();
+    end_of_turn_tokens.push(im_end_token);
+
+    if let Ok(end_of_text_token) = tokenizer.get_token_id("<|endoftext|>") {
+        end_of_turn_tokens.push(end_of_text_token);
+    }
+    end_of_turn_tokens
+}
+
 pub(crate) fn encode_system_message(tokenizer: &Tokenizer) -> Result<Vec<u32>, TokenizerError> {
     encode_message(
         tokenizer,
@@ -144,14 +156,8 @@ pub(crate) fn generator_from_model<'a>(generator: Generator<'a>, tokenizer: &'a 
         .with_sampler(Multinomial::new())
 }
 
-fn do_prompt() -> () {
-    print!("> ");
-    let _ = io::stdout().flush();
-}
-
-pub(crate) fn do_one_iteration(generator: &mut Generator, tokenizer: &Tokenizer, end_of_turn_tokens: &Vec<TokenId>) -> Result<bool, Box<dyn Error>> {
-    do_prompt();
-
+pub(crate) fn do_one_iteration(generator: &mut Generator, tokenizer: &Tokenizer) -> Result<bool, Box<dyn Error>> {
+    let end_of_turn_tokens = get_end_of_turn_tokens(tokenizer);
     let mut user_input = String::new();
     let n_read = io::stdin().read_line(&mut user_input)?;
     if n_read == 0 {
