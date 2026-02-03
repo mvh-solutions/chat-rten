@@ -7,6 +7,7 @@ use std::io::Write;
 use rten_generate::{Generator, GeneratorUtils};
 use rten_generate::filter::Chain;
 use rten_generate::sampler::Multinomial;
+use rten::Model;
 
 pub(crate) struct ChatConfig {
     pub(crate) model_path: String,
@@ -148,9 +149,9 @@ pub(crate) fn generate_user_prompt(
     )
 }
 
-pub(crate) fn generator_from_model<'a>(generator: Generator<'a>, tokenizer: &'a Tokenizer, top_k: usize, temperature: f32) -> Generator<'a> {
+pub(crate) fn generator_from_model<'a>(model: &'a Model, tokenizer: &'a Tokenizer, top_k: usize, temperature: f32) -> Generator<'a> {
     let prompt = encode_system_message(tokenizer).expect("encode system message");
-    generator
+    Generator::from_model(model).expect("generator from model")
         .with_prompt(&prompt)
         .with_logits_filter(Chain::new().top_k(top_k).temperature(temperature))
         .with_sampler(Multinomial::new())

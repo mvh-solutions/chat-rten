@@ -25,6 +25,7 @@ fn do_prompt() -> () {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+
     let args: Args = argh::from_env();
     let config = ChatConfig {
         model_path: args.model,
@@ -35,8 +36,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let model = unsafe { Model::load_mmap(config.model_path) }?;
     let tokenizer = Tokenizer::from_file(&config.tokenizer_path)?;
-    let mut generator = Generator::from_model(&model)?;
-    generator = generator_from_model(generator, &tokenizer, config.top_k, config.temperature);
+    let mut generator = generator_from_model(&model, &tokenizer, config.top_k, config.temperature);
 
     loop {
         do_prompt();
