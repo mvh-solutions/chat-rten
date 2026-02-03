@@ -12,7 +12,8 @@ pub(crate) struct ChatConfig {
     pub(crate) tokenizer_path: String,
     pub(crate) temperature: f32,
     pub(crate) top_k: usize,
-    pub(crate) keep_history: bool
+    pub(crate) keep_history: bool,
+    pub(crate) show_prompt: bool
 }
 
 /// Helpers for LLM chat.
@@ -145,7 +146,7 @@ pub(crate) fn generate_user_prompt(
         note_context.as_str(),
         "Here are some notes on important words in this verse. These notes are also NOT Bible translations. They refer to the unfoldingWord Literal Translation, but may be applied to other Bible translations.",
         snippet_context.as_str(),
-        "Now answer the following question using only the documents above.",
+        "Now answer the following question, in English, using only the documents above.",
         &user_input.trim()
     )
 }
@@ -168,12 +169,13 @@ pub(crate) fn do_one_iteration(
     generator: &mut Generator,
     tokenizer: &Tokenizer,
     user_input: String,
+    show_prompt: bool
 ) -> Result<Vec<String>, Box<dyn Error>> {
     let end_of_turn_tokens = get_end_of_turn_tokens(tokenizer);
 
     let user_text =
         generate_user_prompt("JHN 3:16".to_string(), "John 3:16".to_string(), user_input);
-    let token_ids = encode_message(&tokenizer, user_text)?;
+    let token_ids = encode_message(&tokenizer, user_text.clone())?;
 
     generator.append_prompt(&token_ids);
 
@@ -182,6 +184,9 @@ pub(crate) fn do_one_iteration(
         .stop_on_tokens(&end_of_turn_tokens)
         .decode(&tokenizer);
     let mut tokens = Vec::new();
+    if show_prompt {
+        tokens.push(format!("\n# Prompt\n\n{}\n", &user_text));
+    }
     for token in decoder {
         let token = token?;
             tokens.push(format!("{}", token));
