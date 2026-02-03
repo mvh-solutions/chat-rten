@@ -13,7 +13,8 @@ pub(crate) struct ChatConfig {
     pub(crate) temperature: f32,
     pub(crate) top_k: usize,
     pub(crate) keep_history: bool,
-    pub(crate) show_prompt: bool
+    pub(crate) show_prompt: bool,
+    pub(crate) show_time: bool
 }
 
 /// Helpers for LLM chat.
