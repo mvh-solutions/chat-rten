@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         &[
             MessageChunk::Token(im_start_token),
             MessageChunk::Text(
-                "system\nYou are a helpful assistant. The user is translating John 3:16 in the Bible. She is translating from English, which she speaks fluently. However, she left school when she was 11 so her written English is limited. She likes to read short, precise answers. She likes answers that are between one and three short paragraphs. She does not want to see the entire verse, only the parts of the verse that are relevant to the question.",
+                "system\nYou are a helpful assistant. The user is translating John 3:16 in the Bible. She is translating from English, which she speaks fluently. However, she left school when she was 11 so her written English is limited. She likes to read short, precise answers. She likes answers that contain between one and three short paragraphs. She does not want to see the entire verse, only the parts of the verse that are relevant to the question.",
             ),
             MessageChunk::Token(im_end_token),
         ],
