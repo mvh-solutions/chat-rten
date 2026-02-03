@@ -1,23 +1,21 @@
-use std::collections::BTreeMap;
-use argh::FromArgs;
+use rten_text::{TokenId, Tokenizer, TokenizerError};
 use serde::{Deserialize, Serialize};
-use rten_text::{Tokenizer, TokenizerError};
+use std::collections::BTreeMap;
+use std::error::Error;
+use std::io;
+use std::io::Write;
+use rten_generate::{Generator, GeneratorUtils};
+use rten_generate::filter::Chain;
+use rten_generate::sampler::Multinomial;
+
+pub(crate) struct ChatConfig {
+    pub(crate) model_path: String,
+    pub(crate) tokenizer_path: String,
+    pub(crate) temperature: f32,
+    pub(crate) top_k: usize
+}
 
 /// Helpers for LLM chat.
-#[derive(FromArgs)]
-pub(crate) struct Args {
-    /// input model
-    #[argh(positional)]
-    pub(crate) model: String,
-
-    /// tokenizer.json file
-    #[argh(positional)]
-    pub(crate) tokenizer_config: String,
-
-    /// generation temperature (must be >= 0, default: 0.7). Smaller values make output less "creative" by concentrating the probability distribution more. A value of 0.0 causes sampling to be greedy.
-    #[argh(option, short = 't', default = "0.7")]
-    pub(crate) temperature: f32,
-}
 
 pub(crate) enum MessageChunk<'a> {
     Text(&'a str),
@@ -29,12 +27,18 @@ pub(crate) struct VerseContext {
     pub(crate) juxta: String,
     pub(crate) translations: BTreeMap<String, String>,
     pub(crate) notes: BTreeMap<String, Vec<String>>,
-    pub(crate) snippets: BTreeMap<String, Vec<String>>
+    pub(crate) snippets: BTreeMap<String, Vec<String>>,
 }
 
+pub(crate) fn encode_system_message(tokenizer: &Tokenizer) -> Result<Vec<u32>, TokenizerError> {
+    encode_message(
+        tokenizer,
+        "system\nYou are a helpful assistant. The user is translating John 3:16 in the Bible. She is translating from English, which she speaks fluently. However, she left school when she was 11 years old so her written English is limited. She likes to read short, precise answers. She likes answers that contain between one and three short paragraphs. She does not want to see the entire verse, only the parts of the verse that are relevant to the question.".to_string()
+    )
+}
 pub(crate) fn encode_message(
     tokenizer: &Tokenizer,
-    user_prompt: String
+    user_prompt: String,
 ) -> Result<Vec<u32>, TokenizerError> {
     let im_start_token = tokenizer.get_token_id("<|im_start|>")?;
     let im_end_token = tokenizer.get_token_id("<|im_end|>")?;
@@ -68,14 +72,20 @@ pub(crate) fn encode_message(
     Ok(token_ids)
 }
 
-pub(crate) fn generate_user_prompt(_bcv: String, _printable_bcv: String, user_input: String) -> String {
+pub(crate) fn generate_user_prompt(
+    _bcv: String,
+    _printable_bcv: String,
+    user_input: String,
+) -> String {
     let verse_context_path = std::path::PathBuf::from("./test_data/JHN/ch_3/v16.json");
     let absolute_verse_context_path = std::path::absolute(&verse_context_path).expect("absolute");
-    let verse_context_string = std::fs::read_to_string(&absolute_verse_context_path).expect("Read verse context");
-    let verse_context_json: VerseContext = serde_json::from_str(&verse_context_string).expect("Parse verse context");
+    let verse_context_string =
+        std::fs::read_to_string(&absolute_verse_context_path).expect("Read verse context");
+    let verse_context_json: VerseContext =
+        serde_json::from_str(&verse_context_string).expect("Parse verse context");
     let mut translation_contexts: Vec<String> = Vec::new();
     for (k, v) in verse_context_json.translations {
-        translation_contexts.push(format!("\n- {} ({}): {}\n", "John 3:16", &k, &v ));
+        translation_contexts.push(format!("\n- {} ({}): {}\n", "John 3:16", &k, &v));
     }
     let translation_context: String = translation_contexts.into_iter().collect();
     let juxta_context = verse_context_json.juxta.clone();
@@ -89,7 +99,10 @@ pub(crate) fn generate_user_prompt(_bcv: String, _printable_bcv: String, user_in
             note_n += 1;
         }
         let numbered_note_string: String = numbered_notes.into_iter().collect();
-        note_contexts.push(format!("\n- {} from the {}: {}\n", "John 3:16", &k, &numbered_note_string));
+        note_contexts.push(format!(
+            "\n- {} from the {}: {}\n",
+            "John 3:16", &k, &numbered_note_string
+        ));
     }
     let note_context: String = note_contexts.into_iter().collect();
 
@@ -102,7 +115,10 @@ pub(crate) fn generate_user_prompt(_bcv: String, _printable_bcv: String, user_in
             note_n += 1;
         }
         let numbered_note_string: String = snippet_notes.into_iter().collect();
-        snippet_contexts.push(format!("\n- the word or words '{}' in {}: {}\n", &snippet_key, "John 3:16", &numbered_note_string));
+        snippet_contexts.push(format!(
+            "\n- the word or words '{}' in {}: {}\n",
+            &snippet_key, "John 3:16", &numbered_note_string
+        ));
     }
     let snippet_context: String = snippet_contexts.into_iter().collect();
     format!(
@@ -118,4 +134,48 @@ pub(crate) fn generate_user_prompt(_bcv: String, _printable_bcv: String, user_in
         "Now answer the following question using only the documents above.",
         &user_input.trim()
     )
+}
+
+pub(crate) fn generator_from_model<'a>(generator: Generator<'a>, tokenizer: &'a Tokenizer, top_k: usize, temperature: f32) -> Generator<'a> {
+    let prompt = encode_system_message(tokenizer).expect("encode system message");
+    generator
+        .with_prompt(&prompt)
+        .with_logits_filter(Chain::new().top_k(top_k).temperature(temperature))
+        .with_sampler(Multinomial::new())
+}
+
+fn do_prompt() -> () {
+    print!("> ");
+    let _ = io::stdout().flush();
+}
+
+pub(crate) fn do_one_iteration(generator: &mut Generator, tokenizer: &Tokenizer, end_of_turn_tokens: &Vec<TokenId>) -> Result<bool, Box<dyn Error>> {
+    do_prompt();
+
+    let mut user_input = String::new();
+    let n_read = io::stdin().read_line(&mut user_input)?;
+    if n_read == 0 {
+        // EOF
+        return Ok(false);
+    }
+
+    let user_text =
+        generate_user_prompt("JHN 3:16".to_string(), "John 3:16".to_string(), user_input);
+    // println!("{}", &user_text);
+    let token_ids = encode_message(&tokenizer, user_text)?;
+
+    generator.append_prompt(&token_ids);
+
+    let decoder = generator
+        .by_ref()
+        .stop_on_tokens(&end_of_turn_tokens)
+        .decode(&tokenizer);
+    for token in decoder {
+        let token = token?;
+        print!("{}", token);
+        let _ = io::stdout().flush();
+    }
+
+    println!();
+    Ok(true)
 }

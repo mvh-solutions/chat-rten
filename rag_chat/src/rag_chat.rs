@@ -2,29 +2,37 @@ mod helpers;
 mod rag_chat_lib;
 
 use std::error::Error;
-use std::io;
-use std::io::prelude::*;
 
 use argh;
+use argh::FromArgs;
 use rten::Model;
-use rten_generate::filter::Chain;
-use rten_generate::sampler::Multinomial;
-use rten_generate::{Generator, GeneratorUtils};
+use rten_generate::Generator;
 use rten_text::Tokenizer;
 
-use helpers::{Args, encode_message};
-use crate::helpers::generate_user_prompt;
+use crate::helpers::{ChatConfig, do_one_iteration, generator_from_model};
 
-fn do_prompt() -> () {
-    print!("> ");
-    let _ = io::stdout().flush();
+#[derive(FromArgs)]
+#[argh(description="cli args")]
+pub(crate) struct Args {
+    /// input model
+    #[argh(positional)]
+    pub(crate) model: String,
+
+    /// tokenizer.json file
+    #[argh(positional)]
+    pub(crate) tokenizer_config: String,
 }
 fn main() -> Result<(), Box<dyn Error>> {
-    let mut args: Args = argh::from_env();
-    args.temperature = args.temperature.max(0.);
+    let args: Args = argh::from_env();
+    let config = ChatConfig {
+        model_path: args.model,
+        tokenizer_path: args.tokenizer_config,
+        temperature: 0.4,
+        top_k: 20
+    };
 
-    let model = unsafe { Model::load_mmap(args.model) }?;
-    let tokenizer = Tokenizer::from_file(&args.tokenizer_config)?;
+    let model = unsafe { Model::load_mmap(config.model_path) }?;
+    let tokenizer = Tokenizer::from_file(&config.tokenizer_path)?;
 
     let im_end_token = tokenizer.get_token_id("<|im_end|>")?;
 
@@ -35,57 +43,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         end_of_turn_tokens.push(end_of_text_token);
     }
 
-    // From `chat_template` in tokenizer_config.json.
-    let prompt_tokens = encode_message(
-        &tokenizer,
-        "system\nYou are a helpful assistant. The user is translating John 3:16 in the Bible. She is translating from English, which she speaks fluently. However, she left school when she was 11 years old so her written English is limited. She likes to read short, precise answers. She likes answers that contain between one and three short paragraphs. She does not want to see the entire verse, only the parts of the verse that are relevant to the question.".to_string()
-    ) ? ;
+    let mut generator = Generator::from_model(&model)?;
+    generator = generator_from_model(generator, &tokenizer, config.top_k, config.temperature);
 
-    // From Qwen2's `generation_config.json`
-    let top_k = 5;
-
-    let mut generator = Generator::from_model(&model)?
-        .with_prompt(&prompt_tokens)
-        .with_logits_filter(Chain::new().top_k(top_k).temperature(args.temperature))
-        .with_sampler(Multinomial::new());
-
-    let mut first_time: bool = true;
     loop {
-
-        do_prompt();
-
-        let mut user_input = String::new();
-        let n_read = io::stdin().read_line(&mut user_input)?;
-        if n_read == 0 {
-            // EOF
-            break;
-        }
-        if !first_time && user_input.clone().trim().len() == 0 {
-            break;
-        }
-        first_time = false;
-
-        let user_text = generate_user_prompt("JHN 3:16".to_string(), "John 3:16".to_string(), user_input);
-        // println!("{}", &user_text);
-        let token_ids = encode_message(
-            &tokenizer,
-            user_text,
-        )?;
-
-        generator.append_prompt(&token_ids);
-
-        let decoder = generator
-            .by_ref()
-            .stop_on_tokens(&end_of_turn_tokens)
-            .decode(&tokenizer);
-        for token in decoder {
-            let token = token?;
-            print!("{}", token);
-            let _ = io::stdout().flush();
-        }
-
-        println!();
+        do_one_iteration(&mut generator, &tokenizer, &end_of_turn_tokens)?;
     }
-
-    Ok(())
 }
