@@ -1,19 +1,18 @@
+use rten::Model;
+use rten_generate::filter::Chain;
+use rten_generate::sampler::Multinomial;
+use rten_generate::{Generator, GeneratorUtils};
 use rten_text::{TokenId, Tokenizer, TokenizerError};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::error::Error;
-use std::io;
-use std::io::Write;
-use rten_generate::{Generator, GeneratorUtils};
-use rten_generate::filter::Chain;
-use rten_generate::sampler::Multinomial;
-use rten::Model;
 
 pub(crate) struct ChatConfig {
     pub(crate) model_path: String,
     pub(crate) tokenizer_path: String,
     pub(crate) temperature: f32,
-    pub(crate) top_k: usize
+    pub(crate) top_k: usize,
+    pub(crate) keep_history: bool
 }
 
 /// Helpers for LLM chat.
@@ -32,7 +31,9 @@ pub(crate) struct VerseContext {
 }
 
 pub(crate) fn get_end_of_turn_tokens(tokenizer: &Tokenizer) -> Vec<TokenId> {
-    let im_end_token = tokenizer.get_token_id("<|im_end|>").expect("get token id for end");
+    let im_end_token = tokenizer
+        .get_token_id("<|im_end|>")
+        .expect("get token id for end");
 
     let mut end_of_turn_tokens = Vec::new();
     end_of_turn_tokens.push(im_end_token);
@@ -46,7 +47,7 @@ pub(crate) fn get_end_of_turn_tokens(tokenizer: &Tokenizer) -> Vec<TokenId> {
 pub(crate) fn encode_system_message(tokenizer: &Tokenizer) -> Result<Vec<u32>, TokenizerError> {
     encode_message(
         tokenizer,
-        "system\nYou are a helpful assistant. The user is translating John 3:16 in the Bible. She is translating from English, which she speaks fluently. However, she left school when she was 11 years old so her written English is limited. She likes to read short, precise answers. She likes answers that contain between one and three short paragraphs. She does not want to see the entire verse, only the parts of the verse that are relevant to the question.".to_string()
+        "system\nYou are a helpful assistant. You speak English. The user is translating John 3:16 in the Bible. She is translating from English, which she speaks fluently. However, she left school when she was 11 years old so her written English is limited. She likes to read short, precise answers. She likes answers that contain between one and three short paragraphs. She does not want to see the entire verse, only the parts of the verse that are relevant to the question.".to_string()
     )
 }
 pub(crate) fn encode_message(
@@ -149,26 +150,29 @@ pub(crate) fn generate_user_prompt(
     )
 }
 
-pub(crate) fn generator_from_model<'a>(model: &'a Model, tokenizer: &'a Tokenizer, top_k: usize, temperature: f32) -> Generator<'a> {
+pub(crate) fn generator_from_model<'a>(
+    model: &'a Model,
+    tokenizer: &'a Tokenizer,
+    top_k: usize,
+    temperature: f32,
+) -> Generator<'a> {
     let prompt = encode_system_message(tokenizer).expect("encode system message");
-    Generator::from_model(model).expect("generator from model")
+    Generator::from_model(model)
+        .expect("generator from model")
         .with_prompt(&prompt)
         .with_logits_filter(Chain::new().top_k(top_k).temperature(temperature))
         .with_sampler(Multinomial::new())
 }
 
-pub(crate) fn do_one_iteration(generator: &mut Generator, tokenizer: &Tokenizer) -> Result<bool, Box<dyn Error>> {
+pub(crate) fn do_one_iteration(
+    generator: &mut Generator,
+    tokenizer: &Tokenizer,
+    user_input: String,
+) -> Result<Vec<String>, Box<dyn Error>> {
     let end_of_turn_tokens = get_end_of_turn_tokens(tokenizer);
-    let mut user_input = String::new();
-    let n_read = io::stdin().read_line(&mut user_input)?;
-    if n_read == 0 {
-        // EOF
-        return Ok(false);
-    }
 
     let user_text =
         generate_user_prompt("JHN 3:16".to_string(), "John 3:16".to_string(), user_input);
-    // println!("{}", &user_text);
     let token_ids = encode_message(&tokenizer, user_text)?;
 
     generator.append_prompt(&token_ids);
@@ -177,12 +181,10 @@ pub(crate) fn do_one_iteration(generator: &mut Generator, tokenizer: &Tokenizer)
         .by_ref()
         .stop_on_tokens(&end_of_turn_tokens)
         .decode(&tokenizer);
+    let mut tokens = Vec::new();
     for token in decoder {
         let token = token?;
-        print!("{}", token);
-        let _ = io::stdout().flush();
-    }
-
-    println!();
-    Ok(true)
+            tokens.push(format!("{}", token));
+        };
+    Ok(tokens)
 }
