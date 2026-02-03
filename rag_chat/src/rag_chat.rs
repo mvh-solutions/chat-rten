@@ -12,9 +12,13 @@ use rten_generate::sampler::Multinomial;
 use rten_generate::{Generator, GeneratorUtils};
 use rten_text::Tokenizer;
 
-use helpers::{Args, MessageChunk, encode_message};
+use helpers::{Args, encode_message};
 use crate::helpers::generate_user_prompt;
 
+fn do_prompt() -> () {
+    print!("> ");
+    let _ = io::stdout().flush();
+}
 fn main() -> Result<(), Box<dyn Error>> {
     let mut args: Args = argh::from_env();
     args.temperature = args.temperature.max(0.);
@@ -22,7 +26,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let model = unsafe { Model::load_mmap(args.model) }?;
     let tokenizer = Tokenizer::from_file(&args.tokenizer_config)?;
 
-    let im_start_token = tokenizer.get_token_id("<|im_start|>")?;
     let im_end_token = tokenizer.get_token_id("<|im_end|>")?;
 
     let mut end_of_turn_tokens = Vec::new();
@@ -35,14 +38,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     // From `chat_template` in tokenizer_config.json.
     let prompt_tokens = encode_message(
         &tokenizer,
-        &[
-            MessageChunk::Token(im_start_token),
-            MessageChunk::Text(
-                "system\nYou are a helpful assistant. The user is translating John 3:16 in the Bible. She is translating from English, which she speaks fluently. However, she left school when she was 11 so her written English is limited. She likes to read short, precise answers. She likes answers that contain between one and three short paragraphs. She does not want to see the entire verse, only the parts of the verse that are relevant to the question.",
-            ),
-            MessageChunk::Token(im_end_token),
-        ],
-    )?;
+        "system\nYou are a helpful assistant. The user is translating John 3:16 in the Bible. She is translating from English, which she speaks fluently. However, she left school when she was 11 years old so her written English is limited. She likes to read short, precise answers. She likes answers that contain between one and three short paragraphs. She does not want to see the entire verse, only the parts of the verse that are relevant to the question.".to_string()
+    ) ? ;
 
     // From Qwen2's `generation_config.json`
     let top_k = 5;
@@ -52,9 +49,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_logits_filter(Chain::new().top_k(top_k).temperature(args.temperature))
         .with_sampler(Multinomial::new());
 
+    let mut first_time: bool = true;
     loop {
-        print!("> ");
-        let _ = io::stdout().flush();
+
+        do_prompt();
 
         let mut user_input = String::new();
         let n_read = io::stdin().read_line(&mut user_input)?;
@@ -62,21 +60,16 @@ fn main() -> Result<(), Box<dyn Error>> {
             // EOF
             break;
         }
+        if !first_time && user_input.clone().trim().len() == 0 {
+            break;
+        }
+        first_time = false;
 
-        // From `chat_template` in tokenizer_config.json.
-        let user_text = generate_user_prompt("JHN 3:16".to_string(), "JHN 3:16".to_string(), user_input);
-        println!("{}", &user_text);
+        let user_text = generate_user_prompt("JHN 3:16".to_string(), "John 3:16".to_string(), user_input);
+        // println!("{}", &user_text);
         let token_ids = encode_message(
             &tokenizer,
-            &[
-                MessageChunk::Token(im_start_token),
-                MessageChunk::Text("user\n"),
-                MessageChunk::Text(&user_text),
-                MessageChunk::Token(im_end_token),
-                MessageChunk::Text("\n"),
-                MessageChunk::Token(im_start_token),
-                MessageChunk::Text("assistant\n"),
-            ],
+            user_text,
         )?;
 
         generator.append_prompt(&token_ids);

@@ -34,13 +34,32 @@ pub(crate) struct VerseContext {
 
 pub(crate) fn encode_message(
     tokenizer: &Tokenizer,
-    chunks: &[crate::MessageChunk],
+    user_prompt: String
 ) -> Result<Vec<u32>, TokenizerError> {
+    let im_start_token = tokenizer.get_token_id("<|im_start|>")?;
+    let im_end_token = tokenizer.get_token_id("<|im_end|>")?;
+
+    let mut end_of_turn_tokens = Vec::new();
+    end_of_turn_tokens.push(im_end_token);
+
+    if let Ok(end_of_text_token) = tokenizer.get_token_id("<|endoftext|>") {
+        end_of_turn_tokens.push(end_of_text_token);
+    }
+
     let mut token_ids = Vec::new();
+    let chunks = &[
+        MessageChunk::Token(im_start_token),
+        MessageChunk::Text("user\n"),
+        MessageChunk::Text(&user_prompt),
+        MessageChunk::Token(im_end_token),
+        MessageChunk::Text("\n"),
+        MessageChunk::Token(im_start_token),
+        MessageChunk::Text("assistant\n"),
+    ];
     for chunk in chunks {
         match chunk {
-            crate::MessageChunk::Token(tok_id) => token_ids.push(*tok_id),
-            crate::MessageChunk::Text(text) => {
+            MessageChunk::Token(tok_id) => token_ids.push(*tok_id),
+            MessageChunk::Text(text) => {
                 let encoded = tokenizer.encode(*text, None)?;
                 token_ids.extend(encoded.token_ids());
             }
