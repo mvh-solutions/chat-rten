@@ -1,11 +1,7 @@
-use rten::Model;
-use rten_generate::filter::Chain;
-use rten_generate::sampler::Multinomial;
-use rten_generate::{Generator, GeneratorUtils};
-use rten_text::{TokenId, Tokenizer, TokenizerError};
-use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::error::Error;
+use serde::{Deserialize, Serialize};
+use rten_text::{Tokenizer, TokenizerError};
+use crate::process::MessageChunk;
 
 pub(crate) struct ChatConfig {
     pub(crate) model_path: String,
@@ -17,33 +13,12 @@ pub(crate) struct ChatConfig {
     pub(crate) show_time: bool
 }
 
-/// Helpers for LLM chat.
-
-pub(crate) enum MessageChunk<'a> {
-    Text(&'a str),
-    Token(u32),
-}
-
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub(crate) struct VerseContext {
     pub(crate) juxta: String,
     pub(crate) translations: BTreeMap<String, String>,
     pub(crate) notes: BTreeMap<String, Vec<String>>,
     pub(crate) snippets: BTreeMap<String, Vec<String>>,
-}
-
-pub(crate) fn get_end_of_turn_tokens(tokenizer: &Tokenizer) -> Vec<TokenId> {
-    let im_end_token = tokenizer
-        .get_token_id("<|im_end|>")
-        .expect("get token id for end");
-
-    let mut end_of_turn_tokens = Vec::new();
-    end_of_turn_tokens.push(im_end_token);
-
-    if let Ok(end_of_text_token) = tokenizer.get_token_id("<|endoftext|>") {
-        end_of_turn_tokens.push(end_of_text_token);
-    }
-    end_of_turn_tokens
 }
 
 pub(crate) fn encode_system_message(tokenizer: &Tokenizer) -> Result<Vec<u32>, TokenizerError> {
@@ -91,23 +66,18 @@ pub(crate) fn encode_message(
 pub(crate) fn generate_user_prompt(
     _bcv: String,
     _printable_bcv: String,
+    rag_json: VerseContext,
     user_input: String,
 ) -> String {
-    let verse_context_path = std::path::PathBuf::from("./test_data/JHN/ch_3/v16.json");
-    let absolute_verse_context_path = std::path::absolute(&verse_context_path).expect("absolute");
-    let verse_context_string =
-        std::fs::read_to_string(&absolute_verse_context_path).expect("Read verse context");
-    let verse_context_json: VerseContext =
-        serde_json::from_str(&verse_context_string).expect("Parse verse context");
     let mut translation_contexts: Vec<String> = Vec::new();
-    for (k, v) in verse_context_json.translations {
+    for (k, v) in rag_json.translations {
         translation_contexts.push(format!("\n- {} ({}): {}\n", "John 3:16", &k, &v));
     }
     let translation_context: String = translation_contexts.into_iter().collect();
-    let juxta_context = verse_context_json.juxta.clone();
+    let juxta_context = rag_json.juxta.clone();
 
     let mut note_contexts: Vec<String> = Vec::new();
-    for (k, v) in verse_context_json.notes {
+    for (k, v) in rag_json.notes {
         let mut numbered_notes: Vec<String> = Vec::new();
         let mut note_n = 1;
         for note in v {
@@ -123,7 +93,7 @@ pub(crate) fn generate_user_prompt(
     let note_context: String = note_contexts.into_iter().collect();
 
     let mut snippet_contexts: Vec<String> = Vec::new();
-    for (snippet_key, snippet_value) in verse_context_json.snippets {
+    for (snippet_key, snippet_value) in rag_json.snippets {
         let mut snippet_notes: Vec<String> = Vec::new();
         let mut note_n = 1;
         for note in snippet_value {
@@ -150,47 +120,4 @@ pub(crate) fn generate_user_prompt(
         "Now answer the following question, in English, using only the documents above.",
         &user_input.trim()
     )
-}
-
-pub(crate) fn generator_from_model<'a>(
-    model: &'a Model,
-    tokenizer: &'a Tokenizer,
-    top_k: usize,
-    temperature: f32,
-) -> Generator<'a> {
-    let prompt = encode_system_message(tokenizer).expect("encode system message");
-    Generator::from_model(model)
-        .expect("generator from model")
-        .with_prompt(&prompt)
-        .with_logits_filter(Chain::new().top_k(top_k).temperature(temperature))
-        .with_sampler(Multinomial::new())
-}
-
-pub(crate) fn do_one_iteration(
-    generator: &mut Generator,
-    tokenizer: &Tokenizer,
-    user_input: String,
-    show_prompt: bool
-) -> Result<Vec<String>, Box<dyn Error>> {
-    let end_of_turn_tokens = get_end_of_turn_tokens(tokenizer);
-
-    let user_text =
-        generate_user_prompt("JHN 3:16".to_string(), "John 3:16".to_string(), user_input);
-    let token_ids = encode_message(&tokenizer, user_text.clone())?;
-
-    generator.append_prompt(&token_ids);
-
-    let decoder = generator
-        .by_ref()
-        .stop_on_tokens(&end_of_turn_tokens)
-        .decode(&tokenizer);
-    let mut tokens = Vec::new();
-    if show_prompt {
-        tokens.push(format!("\n# Prompt\n\n{}\n", &user_text));
-    }
-    for token in decoder {
-        let token = token?;
-            tokens.push(format!("{}", token));
-        };
-    Ok(tokens)
 }

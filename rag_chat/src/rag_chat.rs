@@ -7,8 +7,11 @@ use std::io;
 use std::io::{stdout, Write};
 use std::time::Instant;
 
-mod helpers;
-use crate::helpers::{ChatConfig, do_one_iteration, generator_from_model};
+mod process;
+mod prompt;
+
+use crate::process::{do_one_iteration, generator_from_model};
+use crate::prompt::{ChatConfig, VerseContext};
 
 #[derive(FromArgs)]
 #[argh(description = "cli args")]
@@ -61,6 +64,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let model = unsafe { Model::load_mmap(config.model_path) }?;
     let tokenizer = Tokenizer::from_file(&config.tokenizer_path)?;
     let mut generator = generator_from_model(&model, &tokenizer, config.top_k, config.temperature);
+
+    let rag_json_path = std::path::PathBuf::from("./test_data/JHN/ch_3/v16.json");
+    let absolute_rag_json_path = std::path::absolute(&rag_json_path).expect("absolute");
+    let verse_context_string =
+        std::fs::read_to_string(&absolute_rag_json_path).expect("Read verse context");
+    let rag_json: VerseContext =
+        serde_json::from_str(&verse_context_string).expect("Parse verse context");
+
     println!("# Hello");
     println!("## Commands: /+history|-history|+prompt|-prompt|+time|-time|clear/");
     println!("## Empty line to quit");
@@ -114,7 +125,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             generator = generator_from_model(&model, &tokenizer, config.top_k, config.temperature);
         }
         let now = Instant::now();
-        let output_tokens = do_one_iteration(&mut generator, &tokenizer, user_input, config.show_prompt.clone())?;
+        let output_tokens = do_one_iteration(&mut generator, &tokenizer, rag_json.clone(), user_input, config.show_prompt.clone())?;
         if config.show_time {
             println!("# Processed in {:.2?} secs", now.elapsed());
         }
