@@ -2,9 +2,7 @@ use rten::Model;
 use rten_generate::filter::Chain;
 use rten_generate::sampler::Multinomial;
 use rten_generate::{Generator, GeneratorUtils};
-use rten_text::{TokenId, Tokenizer, TokenizerError};
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use rten_text::{TokenId, Tokenizer};
 use std::error::Error;
 
 use crate::prompt::{encode_message, encode_system_message, generate_user_prompt, VerseContext};

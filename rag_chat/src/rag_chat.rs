@@ -13,6 +13,7 @@ mod prompt;
 use crate::process::{do_one_iteration, generator_from_model};
 use crate::prompt::{ChatConfig, VerseContext};
 
+// Structure to handle command line arguments
 #[derive(FromArgs)]
 #[argh(description = "cli args")]
 pub(crate) struct Args {
@@ -22,7 +23,8 @@ pub(crate) struct Args {
     pub(crate) tokenizer_config: String,
 }
 
-fn do_prompt(keep_history: bool, show_prompt: bool, show_time: bool) -> () {
+// Generate a CLI prompt that shows the state of chat options
+fn do_cli_prompt(keep_history: bool, show_prompt: bool, show_time: bool) -> () {
     if keep_history {
         print!(">> +history ");
     } else {
@@ -41,6 +43,7 @@ fn do_prompt(keep_history: bool, show_prompt: bool, show_time: bool) -> () {
     let _ = stdout().flush();
 }
 
+// Read a line of CLI input
 fn read_input() -> String {
     let mut user_input_buffer = String::new();
     let _n_read = io::stdin()
@@ -50,6 +53,7 @@ fn read_input() -> String {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    // Put all config into a structure
     let args: Args = argh::from_env();
     let mut config = ChatConfig {
         model_path: args.model,
@@ -61,10 +65,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         show_time: false
     };
 
+    // Set up model
     let model = unsafe { Model::load_mmap(config.model_path) }?;
     let tokenizer = Tokenizer::from_file(&config.tokenizer_path)?;
     let mut generator = generator_from_model(&model, &tokenizer, config.top_k, config.temperature);
 
+    // Get RAG data
     let rag_json_path = std::path::PathBuf::from("./test_data/JHN/ch_3/v16.json");
     let absolute_rag_json_path = std::path::absolute(&rag_json_path).expect("absolute");
     let verse_context_string =
@@ -72,14 +78,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     let rag_json: VerseContext =
         serde_json::from_str(&verse_context_string).expect("Parse verse context");
 
+    // 'Welcome' output
     println!("# Hello");
     println!("## Commands: /+history|-history|+prompt|-prompt|+time|-time|clear/");
     println!("## Empty line to quit");
     println!();
     println!("# Ask me a question about this verse!");
     loop {
-        do_prompt(config.keep_history, config.show_prompt, config.show_time);
+        // Get input from user
+        do_cli_prompt(config.keep_history, config.show_prompt, config.show_time);
         let user_input = read_input();
+
+        // Handle special CLI strings
         if user_input.clone().trim().len() == 0 {
             println!("# Goodbye");
             return Ok(());
@@ -121,18 +131,22 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("# Cleared History");
             continue;
         }
+        // Reset history if necessary
         if !config.keep_history {
             generator = generator_from_model(&model, &tokenizer, config.top_k, config.temperature);
         }
+        // Process the input
         let now = Instant::now();
         let output_tokens = do_one_iteration(&mut generator, &tokenizer, rag_json.clone(), user_input, config.show_prompt.clone())?;
         if config.show_time {
             println!("# Processed in {:.2?} secs", now.elapsed());
         }
+        // Collect output
         for output_token in output_tokens {
             print!("{}", output_token);
             stdout().flush().expect("flush after output token");
         }
+        // And we're ready to do it again!
         println!();
     }
 }
